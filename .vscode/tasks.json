@@ -75,7 +75,17 @@
                 "entity:${input:entityName}"
             ],
             "problemMatcher": []
-        }
+        },
+        {
+            "label": "Generate CRUD Template",
+            "type": "shell",
+            "command": "dart",
+            "args": [
+                "generate.dart",
+                "crud:${input:crudName}"
+            ],
+            "problemMatcher": []
+        },
     ],
     "inputs": [
         {
@@ -112,6 +122,11 @@
             "id": "entityName",
             "type": "promptString",
             "description": "Enter entity name:"
-        }
+        },
+        {
+            "id": "crudName",
+            "type": "promptString",
+            "description": "Enter feature name for CRUD template:"
+        },
     ]
 }

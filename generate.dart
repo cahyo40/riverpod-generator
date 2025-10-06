@@ -64,6 +64,9 @@ void main(List<String> arguments) {
     case 'repository':
       print('For repository, use: repository:<repo_name> on <page_name>');
       break;
+    case 'crud':
+      generateCrudTemplate(name);
+      break;
     default:
       print('Unknown command: $type');
       print('Available commands: page, provider, model, widget');
@@ -496,101 +499,57 @@ final appRouter = GoRouter(
 }
 
 void generateRepositoryOnPage(String repoName, String pageName) {
-  final repoClassName = toCamelCase(repoName);
-  final repoFileName = toSnakeCase(repoName);
+  final className = toCamelCase(repoName);
+  final fileName = toSnakeCase(repoName);
   final pageFileName = toSnakeCase(pageName);
 
-  // Check if page exists
+  /* ---- 1. pastikan page-nya sudah ada ---- */
   final pageDir = Directory('lib/features/$pageFileName');
   if (!pageDir.existsSync()) {
     print('❌ ERROR: Page "$pageName" does not exist!');
-    print(
-      'Please create the page first using: dart generate.dart page:$pageName',
-    );
-    print('Available pages:');
-
-    // List available pages
-    final featuresDir = Directory('lib/features');
-    if (featuresDir.existsSync()) {
-      final directories = featuresDir.listSync();
-      for (final dir in directories) {
-        if (dir is Directory) {
-          print('  - ${dir.path.split('/').last}');
-        }
-      }
-    }
-
+    print('Create it first:  dart generate.dart page:$pageName');
     exit(1);
   }
 
-  // Create repositories directory if not exists
-  final repoDir = Directory('lib/features/$pageFileName/data/repositories');
-  if (!repoDir.existsSync()) {
-    repoDir.createSync(recursive: true);
-    print('Created directory: ${repoDir.path}');
-  }
-
-  // Generate abstract repository for domain
-  final abstractRepoContent =
-      '''
-abstract class ${repoClassName}Repository {
-  // Define your repository contract here
-  Future<void> performOperation();
-}
-''';
-
-  // Generate implementation repository for data
-  final implRepoContent =
-      '''
-import '../../domain/repositories/${repoFileName}_repository.dart';
-import '../datasources/${repoFileName}_datasource.dart';
-
-class ${repoClassName}RepositoryImpl implements ${repoClassName}Repository {
-  final ${repoClassName}Datasource _datasource;
-
-  ${repoClassName}RepositoryImpl(this._datasource);
-
-  @override
-  Future<void> performOperation() async {
-    return await _datasource.performOperation();
-  }
-}
-''';
-
-  // Create domain repositories directory if not exists
+  /* ---- 2. buat folder domain/repositories & data/repositories ---- */
   final domainRepoDir = Directory(
     'lib/features/$pageFileName/domain/repositories',
-  );
-  if (!domainRepoDir.existsSync()) {
-    domainRepoDir.createSync(recursive: true);
-    print('Created directory: ${domainRepoDir.path}');
-  }
+  )..createSync(recursive: true);
+  final dataRepoDir = Directory('lib/features/$pageFileName/data/repositories')
+    ..createSync(recursive: true);
 
-  // Write abstract repository file (domain)
-  final abstractRepoFile = File(
-    '${domainRepoDir.path}/${repoFileName}_repository.dart',
-  );
-  abstractRepoFile.writeAsStringSync(abstractRepoContent);
+  /* ---- 3. abstract repository (KOSONG) ---- */
+  final abstractContent =
+      '''
+abstract class ${className}Repository {
+  // define your contract here
+}
+''';
+  File('${domainRepoDir.path}/${fileName}_repository.dart')
+    ..writeAsStringSync(abstractContent)
+    ..printCreated();
 
-  // Write implementation repository file (data)
-  final implRepoFile = File(
-    '${repoDir.path}/${repoFileName}_repository_impl.dart',
-  );
-  implRepoFile.writeAsStringSync(implRepoContent);
+  /* ---- 4. repository impl (sudah import 2 datasource) ---- */
+  final implContent =
+      '''
+import '../../domain/repositories/${fileName}_repository.dart';
+import '../datasources/${fileName}_local_datasource.dart';
+import '../datasources/${fileName}_network_datasource.dart';
 
-  print('✅ Generated abstract repository: ${abstractRepoFile.path}');
-  print('✅ Generated implementation repository: ${implRepoFile.path}');
-  print('📁 Location: lib/features/$pageFileName/');
-  print(
-    '🎉 Repository "$repoClassName" successfully created on page "$pageName"',
-  );
-  print('');
-  print('💡 Next steps:');
-  print('   1. Implement the actual data source logic in the repository impl');
-  print('   2. Add dependency injection in your provider:');
-  print(
-    '      final repository = ref.watch(${repoFileName}RepositoryProvider);',
-  );
+class ${className}RepositoryImpl implements ${className}Repository {
+  final ${className}LocalDatasource _local;
+  final ${className}NetworkDatasource _network;
+
+  ${className}RepositoryImpl(this._local, this._network);
+
+  // implement your methods here (network-first, local-fallback)
+}
+''';
+  File('${dataRepoDir.path}/${fileName}_repository_impl.dart')
+    ..writeAsStringSync(implContent)
+    ..printCreated();
+
+  print('✅ Repository "$repoName" created on page "$pageName"');
 }
 
 void generateEntities(String name, String pageName) {
@@ -700,26 +659,44 @@ void _syncRepositoryImpl(
   final implFile = File(
     'lib/features/$pageFileName/data/repositories/${fileName}_repository_impl.dart',
   );
-  if (!implFile.existsSync()) return; // nothing to do
+  if (!implFile.existsSync()) return;
 
   var content = implFile.readAsStringSync();
 
-  /* 1.  Update constructor --------------------------------------------------*/
-  final oldCtorField = RegExp(
-    'final\\s+${className}Datasource\\s+_datasource;',
-  );
-  final newCtorFields =
+  /* 1. pastikan import-nya 2 file datasource */
+  final importLocal =
+      "import '../datasources/${fileName}_local_datasource.dart';";
+  final importNetwork =
+      "import '../datasources/${fileName}_network_datasource.dart';";
+
+  if (!content.contains(importLocal)) {
+    // tambahkan tepat setelah baris import abstract
+    content = content.replaceFirst(
+      "import '../../domain/repositories/${fileName}_repository.dart';",
+      "import '../../domain/repositories/${fileName}_repository.dart';\n$importLocal",
+    );
+  }
+  if (!content.contains(importNetwork)) {
+    content = content.replaceFirst(
+      "import '../../domain/repositories/${fileName}_repository.dart';",
+      "import '../../domain/repositories/${fileName}_repository.dart';\n$importNetwork",
+    );
+  }
+
+  /* 2. update constructor kalau masih lama */
+  final oldField = RegExp('final\\s+${className}Datasource\\s+_\\w+;');
+  final newFields =
       '''
   final ${className}LocalDatasource _local;
   final ${className}NetworkDatasource _network;''';
+  content = content.replaceFirst(oldField, newFields);
 
-  content = content.replaceFirst(oldCtorField, newCtorFields);
   content = content.replaceFirst(
-    '${className}RepositoryImpl(this._datasource);',
+    RegExp('${className}RepositoryImpl\\(this\\._\\w+\\);'),
     '${className}RepositoryImpl(this._local, this._network);',
   );
 
-  /* 2.  Update every method to “network-first / local-fallback” -------------*/
+  /* 3. isi setiap method dengan network-first / local-fallback */
   for (final method in methods) {
     final methodName = RegExp(r'\s+(\w+)\(').firstMatch(method)!.group(1)!;
     final newImpl =
@@ -742,5 +719,162 @@ void _syncRepositoryImpl(
   }
 
   implFile.writeAsStringSync(content);
-  print('♻️  Repository implementation updated to use both datasources.');
+  print('♻️  RepositoryImpl updated (imports + methods).');
+}
+
+void generateCrudTemplate(String name) {
+  final className = toCamelCase(name);
+  final fileName = toSnakeCase(name);
+
+  /* ---------- abstract repository ---------- */
+  final abstractRepo =
+      '''
+abstract class ${className}Repository {
+  Future<List<${className}Entity>> getAll();
+  Future<${className}Entity?> getById(String id);
+  Future<void> create(${className}Entity entity);
+  Future<void> update(${className}Entity entity);
+  Future<void> delete(String id);
+}
+''';
+  final repoDir = Directory('lib/features/$fileName/domain/repositories')
+    ..createSync(recursive: true);
+  File('${repoDir.path}/${fileName}_repository.dart')
+    ..writeAsStringSync(abstractRepo)
+    ..printCreated();
+
+  /* ---------- entity (minimal) ---------- */
+  final entity =
+      '''
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part '${fileName}_entity.freezed.dart';
+
+@freezed
+class ${className}Entity with _\$${className}Entity {
+  const factory ${className}Entity({
+    required String id,
+    required String name,
+  }) = _${className}Entity;
+}
+''';
+  final entityDir = Directory('lib/features/$fileName/domain/entities')
+    ..createSync(recursive: true);
+  File('${entityDir.path}/${fileName}_entity.dart')
+    ..writeAsStringSync(entity)
+    ..printCreated();
+
+  /* ---------- repository impl ---------- */
+  final impl =
+      '''
+import '../../domain/repositories/${fileName}_repository.dart';
+import '../datasources/${fileName}_local_datasource.dart';
+import '../datasources/${fileName}_network_datasource.dart';
+
+class ${className}RepositoryImpl implements ${className}Repository {
+  final ${className}LocalDatasource _local;
+  final ${className}NetworkDatasource _network;
+
+  ${className}RepositoryImpl(this._local, this._network);
+
+  @override
+  Future<List<${className}Entity>> getAll() async =>
+      await _network.getAll().catchError((_) => _local.getAll());
+
+  @override
+  Future<${className}Entity?> getById(String id) async =>
+      await _network.getById(id).catchError((_) => _local.getById(id));
+
+  @override
+  Future<void> create(${className}Entity entity) async {
+    try {
+      await _network.create(entity);
+      await _local.create(entity); // simpan cache
+    } catch (_) {
+      await _local.create(entity);
+    }
+  }
+
+  @override
+  Future<void> update(${className}Entity entity) async {
+    try {
+      await _network.update(entity);
+      await _local.update(entity);
+    } catch (_) {
+      await _local.update(entity);
+    }
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    try {
+      await _network.delete(id);
+      await _local.delete(id);
+    } catch (_) {
+      await _local.delete(id);
+    }
+  }
+}
+''';
+  final implDir = Directory('lib/features/$fileName/data/repositories')
+    ..createSync(recursive: true);
+  File('${implDir.path}/${fileName}_repository_impl.dart')
+    ..writeAsStringSync(impl)
+    ..printCreated();
+
+  /* ---------- local datasource ---------- */
+  final localDs =
+      '''
+import '../../domain/repositories/${fileName}_repository.dart';
+
+class ${className}LocalDatasource implements ${className}Repository {
+  @override
+  Future<List<${className}Entity>> getAll() async => [];
+
+  @override
+  Future<${className}Entity?> getById(String id) async => null;
+
+  @override
+  Future<void> create(${className}Entity entity) async {}
+
+  @override
+  Future<void> update(${className}Entity entity) async {}
+
+  @override
+  Future<void> delete(String id) async {}
+}
+''';
+  final dsDir = Directory('lib/features/$fileName/data/datasources')
+    ..createSync(recursive: true);
+  File('${dsDir.path}/${fileName}_local_datasource.dart')
+    ..writeAsStringSync(localDs)
+    ..printCreated();
+
+  /* ---------- network datasource ---------- */
+  final networkDs =
+      '''
+import '../../domain/repositories/${fileName}_repository.dart';
+
+class ${className}NetworkDatasource implements ${className}Repository {
+  @override
+  Future<List<${className}Entity>> getAll() async => [];
+
+  @override
+  Future<${className}Entity?> getById(String id) async => null;
+
+  @override
+  Future<void> create(${className}Entity entity) async {}
+
+  @override
+  Future<void> update(${className}Entity entity) async {}
+
+  @override
+  Future<void> delete(String id) async {}
+}
+''';
+  File('${dsDir.path}/${fileName}_network_datasource.dart')
+    ..writeAsStringSync(networkDs)
+    ..printCreated();
+
+  print('✅ CRUD template for "$name" completed.');
 }
