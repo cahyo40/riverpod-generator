@@ -621,30 +621,126 @@ class ${className}Entity with _\$${className}Entity {
     ..printCreated();
 }
 
+/// Entry-point:  dart generate.dart datasource:<name> on <page>
 void generateDatasource(String name, String pageName) {
   final className = toCamelCase(name);
   final fileName = toSnakeCase(name);
   final pageFileName = toSnakeCase(pageName);
 
-  final content =
-      '''
-abstract class ${className}Datasource {
-  Future<void> performOperation();
-}
-
-class ${className}DatasourceImpl implements ${className}Datasource {
-  @override
-  Future<void> performOperation() async {
-    // TODO: Implement your data source logic
-    // This could be API calls, local database, etc.
+  /* ---------- 1.  Verify that the repository abstract exists ---------- */
+  final repositoryAbstractFile = File(
+    'lib/features/$pageFileName/domain/repositories/${fileName}_repository.dart',
+  );
+  if (!repositoryAbstractFile.existsSync()) {
+    print('❌ ERROR: Repository abstract not found!');
+    print('Create it first:  dart generate.dart repository:$name on $pageName');
+    exit(1);
   }
+
+  /* ---------- 2.  Read the abstract and steal its signatures ---------- */
+  final repoContent = repositoryAbstractFile.readAsStringSync();
+  final methods = RegExp(
+    r'Future<.*?>?\s+\w+\([^)]*\);',
+  ).allMatches(repoContent).map((m) => m.group(0)!).toList();
+
+  if (methods.isEmpty) {
+    print(
+      '⚠️  WARNING: No methods found in repository – empty datasources generated.',
+    );
+  }
+
+  /* ---------- 3.  Build identical implementations for LOCAL ---------- */
+  final localContent =
+      '''
+import '../../domain/repositories/${fileName}_repository.dart';
+
+class ${className}LocalDatasource implements ${className}Repository {
+${methods.map((m) => '  @override\n  $m').join('\n\n  ')}
 }
 ''';
 
-  final dir = Directory('lib/features/$pageFileName/data/datasources');
-  dir.createSync(recursive: true);
+  /* ---------- 4.  Build identical implementations for NETWORK ---------- */
+  final networkContent =
+      '''
+import '../../domain/repositories/${fileName}_repository.dart';
 
-  File('${dir.path}/${fileName}_datasource.dart')
-    ..writeAsStringSync(content)
+class ${className}NetworkDatasource implements ${className}Repository {
+${methods.map((m) => '  @override\n  $m').join('\n\n  ')}
+}
+''';
+
+  /* ---------- 5.  Persist the two files ---------- */
+  final dir = Directory('lib/features/$pageFileName/data/datasources')
+    ..createSync(recursive: true);
+
+  File('${dir.path}/${fileName}_local_datasource.dart')
+    ..writeAsStringSync(localContent)
     ..printCreated();
+
+  File('${dir.path}/${fileName}_network_datasource.dart')
+    ..writeAsStringSync(networkContent)
+    ..printCreated();
+
+  /* ---------- 6.  (Optional) keep repository-impl in sync ---------- */
+  _syncRepositoryImpl(name, pageName, methods);
+}
+
+/* --------------------------------------------------------------- */
+/* Keeps the existing *Impl class in sync with the two datasources */
+/* --------------------------------------------------------------- */
+void _syncRepositoryImpl(
+  String repoName,
+  String pageName,
+  List<String> methods,
+) {
+  final className = toCamelCase(repoName);
+  final fileName = toSnakeCase(repoName);
+  final pageFileName = toSnakeCase(pageName);
+
+  final implFile = File(
+    'lib/features/$pageFileName/data/repositories/${fileName}_repository_impl.dart',
+  );
+  if (!implFile.existsSync()) return; // nothing to do
+
+  var content = implFile.readAsStringSync();
+
+  /* 1.  Update constructor --------------------------------------------------*/
+  final oldCtorField = RegExp(
+    'final\\s+${className}Datasource\\s+_datasource;',
+  );
+  final newCtorFields =
+      '''
+  final ${className}LocalDatasource _local;
+  final ${className}NetworkDatasource _network;''';
+
+  content = content.replaceFirst(oldCtorField, newCtorFields);
+  content = content.replaceFirst(
+    '${className}RepositoryImpl(this._datasource);',
+    '${className}RepositoryImpl(this._local, this._network);',
+  );
+
+  /* 2.  Update every method to “network-first / local-fallback” -------------*/
+  for (final method in methods) {
+    final methodName = RegExp(r'\s+(\w+)\(').firstMatch(method)!.group(1)!;
+    final newImpl =
+        '''
+  @override
+  $method async {
+    try {
+      return await _network.$methodName();
+    } catch (_) {
+      return await _local.$methodName();
+    }
+  }''';
+
+    final existingMethod = RegExp(
+      r'@override\s+Future<.*?>?\s+' +
+          methodName +
+          r'\(\)\s*async\s*\{[^{}]*\}',
+    );
+    content = content.replaceFirst(existingMethod, newImpl);
+  }
+
+  implFile.writeAsStringSync(content);
+  print('♻️  Repository implementation updated to use both datasources.');
 }
