@@ -28,7 +28,7 @@ cd my_app
 
 ### 2. Letakkan `generate.dart` di Root
 ```bash
-wget https://raw.githubusercontent.com/your-repo/generate.dart
+git clone https://github.com/cahyo40/riverpod-generator.git
 # atau copy manual
 ```
 
@@ -38,8 +38,8 @@ dart generate.dart init
 ```
 
 > ⚠️ Perintah ini akan:
-> - Tambahkan dependency ke `pubspec.yaml`
-> - Jalankan `flutter pub get`
+> - Menambahkan dependency ke `pubspec.yaml`
+> - Menjalankan `flutter pub get`
 > - Buat folder struktur Clean Architecture
 > - Buat/update `main.dart` dan `.vscode/tasks.json`
 
