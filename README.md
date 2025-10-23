@@ -1,4 +1,4 @@
-```markdown
+
 # 🚀 Flutter Code Generator  
 **Otomatisasi boilerplate Flutter + Clean Architecture + Riverpod**
 
@@ -24,7 +24,7 @@
 ```bash
 flutter create my_app
 cd my_app
-```
+
 
 ### 2. Letakkan `generate.dart` di Root
 ```bash
