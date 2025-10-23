@@ -16,7 +16,7 @@
 | ✅ `crud:<name>` | Template CRUD lengkap |
 | ✅ VS Code Tasks | Tanpa install ekstensi tambahan |
 
----
+
 
 ## 🎯 Cara Mulai (Baru)
 
@@ -24,7 +24,7 @@
 ```bash
 flutter create my_app
 cd my_app
-
+```
 
 ### 2. Letakkan `generate.dart` di Root
 ```bash
