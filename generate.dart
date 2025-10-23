@@ -9,6 +9,12 @@ void main(List<String> arguments) {
     exit(1);
   }
 
+  if (arguments[0] == 'init') {
+    initProject();
+    generatePage("home");
+    return;
+  }
+
   // Handle screen command with special format
   if (arguments[0] == 'screen' &&
       arguments.length >= 4 &&
@@ -74,6 +80,20 @@ void main(List<String> arguments) {
   }
 }
 
+String toKebabCase(String input) {
+  if (input.contains('.')) {
+    final parts = input.split('.');
+    return parts[0] + parts.skip(1).map((e) => capitalize(e)).join();
+  }
+  return input;
+}
+
+/// Kapitalisasi huruf pertama: home -> Home
+String capitalize(String s) {
+  if (s.isEmpty) return s;
+  return s[0].toUpperCase() + s.substring(1);
+}
+
 String toCamelCase(String input) {
   if (input.contains('.')) {
     final parts = input.split('.');
@@ -98,6 +118,7 @@ extension on File {
 void generatePage(String name) {
   final className = toCamelCase(name);
   final fileName = toSnakeCase(name);
+  final notifierName = toKebabCase(name);
 
   // Generate page widget with Riverpod
   final pageContent =
@@ -112,7 +133,7 @@ class ${className}Page extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final asyncState = ref.watch(${fileName}NotifierProvider);
+    final asyncState = ref.watch(${notifierName}NotifierProvider);
     
     return Scaffold(
       appBar: AppBar(
@@ -282,7 +303,7 @@ part '${fileName}_model.freezed.dart';
 part '${fileName}_model.g.dart';
 
 @freezed
-class ${className}Model with _\$${className}Model {
+abstract class ${className}Model with _\$${className}Model {
   const factory ${className}Model({
     required String id,
     required String name,
@@ -877,4 +898,327 @@ class ${className}NetworkDatasource implements ${className}Repository {
     ..printCreated();
 
   print('✅ CRUD template for "$name" completed.');
+}
+
+// Template untuk tasks.json
+const String defaultTasksJson = '''
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Generate Page",
+      "type": "shell",
+      "command": "dart",
+      "args": ["generate.dart", "page:\${input:pageName}"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate Provider",
+      "type": "shell",
+      "command": "dart",
+      "args": ["generate.dart", "provider:\${input:providerName}"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate Screen on Page",
+      "type": "shell",
+      "command": "dart",
+      "args": ["generate.dart", "screen", "\${input:screenName}", "on", "\${input:pageName}"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate Repository on Page",
+      "type": "shell",
+      "command": "dart",
+      "args": ["generate.dart", "repository:\${input:repoName}", "on", "\${input:pageName}"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate Model",
+      "type": "shell",
+      "command": "dart",
+      "args": ["generate.dart", "model:\${input:modelName}"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate Widget",
+      "type": "shell",
+      "command": "dart",
+      "args": ["generate.dart", "widget:\${input:widgetName}"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate Entity",
+      "type": "shell",
+      "command": "dart",
+      "args": ["generate.dart", "entity:\${input:entityName}"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate CRUD Template",
+      "type": "shell",
+      "command": "dart",
+      "args": ["generate.dart", "crud:\${input:crudName}"],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "pageName",
+      "type": "promptString",
+      "description": "Enter page name (e.g., home or settings.profile):"
+    },
+    {
+      "id": "providerName",
+      "type": "promptString",
+      "description": "Enter provider name (e.g., user, settings):"
+    },
+    {
+      "id": "screenName",
+      "type": "promptString",
+      "description": "Enter screen name (e.g., login, profile):"
+    },
+    {
+      "id": "repoName",
+      "type": "promptString",
+      "description": "Enter repository name (e.g., login, user):"
+    },
+    {
+      "id": "modelName",
+      "type": "promptString",
+      "description": "Enter model name:"
+    },
+    {
+      "id": "widgetName",
+      "type": "promptString",
+      "description": "Enter widget name:"
+    },
+    {
+      "id": "entityName",
+      "type": "promptString",
+      "description": "Enter entity name:"
+    },
+    {
+      "id": "crudName",
+      "type": "promptString",
+      "description": "Enter feature name for CRUD template:"
+    }
+  ]
+}
+''';
+
+// Template untuk main.dart
+const String defaultMainDart = '''
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'core/navigation/app_router.dart';
+
+void main() {
+  runApp(ProviderScope(child: MyApp()));
+}
+
+class MyApp extends ConsumerWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MaterialApp.router(
+      routerConfig: appRouter,
+      title: 'My Flutter App',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+''';
+
+void initProject() async {
+  print('🚀 Initializing Flutter Code Generator...\n');
+  print('⚠️  This will overwrite main.dart and tasks.json if they exist.\n');
+
+  final pubspecFile = File('pubspec.yaml');
+  if (!pubspecFile.existsSync()) {
+    print(
+      '❌ Error: pubspec.yaml not found. Are you in a Flutter project root?',
+    );
+    exit(1);
+  }
+
+  final lines = pubspecFile.readAsLinesSync();
+
+  final depsToAdd = {
+    'flutter_riverpod': '^2.5.1',
+    'freezed_annotation': '^2.4.4',
+    'go_router': '^14.2.3',
+    'riverpod_annotation': '^2.3.5',
+    'json_annotation': '^4.9.0',
+  };
+
+  final devDepsToAdd = {
+    'build_runner': '^2.4.11',
+    'freezed': '^2.5.7',
+    'riverpod_generator': '^2.4.3',
+    'json_serializable': '^6.9.0',
+  };
+
+  print('🔧 Checking pubspec.yaml...\n');
+
+  final newLines = <String>[];
+  bool inFlutterBlock = false;
+  bool inFlutterTestBlock = false;
+  bool depsSectionFound = false;
+  bool devDepsSectionFound = false;
+  bool modified = false;
+
+  for (int i = 0; i < lines.length; i++) {
+    final line = lines[i];
+    final trimmed = line.trim();
+
+    newLines.add(line);
+
+    if (trimmed == 'flutter:') {
+      inFlutterBlock = true;
+      continue;
+    }
+    if (trimmed == 'flutter_test:') {
+      inFlutterTestBlock = true;
+      continue;
+    }
+
+    if (inFlutterBlock &&
+        !line.startsWith('  ') &&
+        trimmed.isNotEmpty &&
+        !trimmed.startsWith('#')) {
+      inFlutterBlock = false;
+    }
+    if (inFlutterTestBlock &&
+        !line.startsWith('  ') &&
+        trimmed.isNotEmpty &&
+        !trimmed.startsWith('#')) {
+      inFlutterTestBlock = false;
+    }
+
+    if (inFlutterBlock &&
+        depsToAdd.isNotEmpty &&
+        (i + 1 >= lines.length || !lines[i + 1].startsWith('  '))) {
+      for (final entry in depsToAdd.entries.toList()) {
+        if (!lines.any((l) => l.contains('${entry.key}:'))) {
+          newLines.add('  ${entry.key}: ${entry.value}');
+          print('✅ Added dependency: ${entry.key}: ${entry.value}');
+          modified = true;
+        }
+        depsToAdd.remove(entry.key);
+      }
+    }
+
+    if (inFlutterTestBlock &&
+        devDepsToAdd.isNotEmpty &&
+        (i + 1 >= lines.length || !lines[i + 1].startsWith('  '))) {
+      for (final entry in devDepsToAdd.entries.toList()) {
+        if (!lines.any((l) => l.contains('${entry.key}:'))) {
+          newLines.add('  ${entry.key}: ${entry.value}');
+          print('✅ Added dev_dependency: ${entry.key}: ${entry.value}');
+          modified = true;
+        }
+        devDepsToAdd.remove(entry.key);
+      }
+    }
+
+    if (trimmed == 'dependencies:') {
+      depsSectionFound = true;
+    } else if (trimmed == 'dev_dependencies:') {
+      devDepsSectionFound = true;
+    }
+  }
+
+  if (depsToAdd.isNotEmpty && depsSectionFound) {
+    newLines.add('');
+    for (final entry in depsToAdd.entries) {
+      if (!lines.any((l) => l.contains('${entry.key}:'))) {
+        newLines.add('  ${entry.key}: ${entry.value}');
+        print('✅ Added dependency: ${entry.key}: ${entry.value}');
+        modified = true;
+      }
+    }
+  }
+
+  if (devDepsToAdd.isNotEmpty && devDepsSectionFound) {
+    newLines.add('');
+    for (final entry in devDepsToAdd.entries) {
+      if (!lines.any((l) => l.contains('${entry.key}:'))) {
+        newLines.add('  ${entry.key}: ${entry.value}');
+        print('✅ Added dev_dependency: ${entry.key}: ${entry.value}');
+        modified = true;
+      }
+    }
+  }
+
+  if (!depsSectionFound) {
+    newLines.add('');
+    newLines.add('dependencies:');
+    for (final entry in depsToAdd.entries) {
+      newLines.add('  ${entry.key}: ${entry.value}');
+      print('✅ Added dependency: ${entry.key}: ${entry.value}');
+      modified = true;
+    }
+  }
+
+  if (!devDepsSectionFound) {
+    newLines.add('');
+    newLines.add('dev_dependencies:');
+    for (final entry in devDepsToAdd.entries) {
+      newLines.add('  ${entry.key}: ${entry.value}');
+      print('✅ Added dev_dependency: ${entry.key}: ${entry.value}');
+      modified = true;
+    }
+  }
+
+  if (modified) {
+    pubspecFile.writeAsStringSync(newLines.join('\n'));
+    print('\n📦 Running flutter pub get...\n');
+    final result = await Process.run('flutter', [
+      'pub',
+      'get',
+    ], runInShell: true);
+    if (result.exitCode != 0) {
+      print('❌ Error running flutter pub get:');
+      print(result.stderr);
+      exit(1);
+    }
+    print('✅ Dependencies installed successfully!\n');
+  } else {
+    print('⏩ All dependencies already exist.\n');
+  }
+
+  // Buat struktur folder
+  final dirs = [
+    Directory('lib/features'),
+    Directory('lib/core/navigation'),
+    Directory('lib/widgets'),
+    Directory('lib/providers'),
+    Directory('lib/models'),
+    Directory('.vscode'),
+  ];
+
+  for (final dir in dirs) {
+    dir.createSync(recursive: true);
+    print('✅ Created/Updated directory: ${dir.path}');
+  }
+
+  // Buat .vscode/tasks.json
+  final tasksFile = File('.vscode/tasks.json');
+  tasksFile.writeAsStringSync(defaultTasksJson.trim());
+  print('✅ Created/Updated .vscode/tasks.json');
+
+  // Buat main.dart
+  final mainFile = File('lib/main.dart');
+  mainFile.writeAsStringSync(defaultMainDart.trim());
+  print('✅ Created/Updated lib/main.dart');
+
+  print('\n🎉 Initialization complete!');
+  print('📌 Next steps:');
+  print('   Try: dart generate.dart page:home');
+  print('   Or use VS Code Tasks (Ctrl+Shift+P → Tasks: Run Task)');
 }
