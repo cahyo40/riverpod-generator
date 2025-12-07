@@ -13,7 +13,9 @@
 | ✅ `model:<name>` | Freezed + JSON Serializable |
 | ✅ `screen <name> on <page>` | Sub-screen di page yang sudah ada |
 | ✅ `repository:<name> on <page>` | Abstract + Implementation + Datasource |
+| ✅ `entity:<name> on <page>` | Generate entity class pada domain layer |
 | ✅ `crud:<name>` | Template CRUD lengkap |
+| ✅ `--help` | Menampilkan bantuan perintah |
 | ✅ VS Code Tasks | Tanpa install ekstensi tambahan |
 
 
@@ -78,10 +80,16 @@ dart generate.dart model:product
 dart generate.dart widget:custom_button
 ```
 
-### Sub-Screen & Repository
+### Sub-Screen, Entity & Repository
 ```bash
 dart generate.dart screen settings on home
 dart generate.dart repository:cart on home
+dart generate.dart entity:product on home
+```
+
+### Bantuan
+```bash
+dart generate.dart --help
 ```
 
 ### Template CRUD
@@ -149,7 +157,7 @@ flutter run
 
 | Tujuan | Package |
 |--------|---------|
-| State Management | `flutter_riverpod`, `riverpod_annotation` |
+| State Management | `flutter_riverpod`, `hooks_riverpod`, `riverpod_annotation`, `flutter_hooks` |
 | Routing | `go_router` |
 | Model | `freezed_annotation`, `json_annotation` |
 | Generator | `build_runner`, `freezed`, `riverpod_generator`, `json_serializable` |

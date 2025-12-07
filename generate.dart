@@ -2,16 +2,23 @@
 
 import 'dart:io';
 
-void main(List<String> arguments) {
+Future<void> main(List<String> arguments) async {
   if (arguments.isEmpty) {
-    print('Usage: dart generate.dart <command>:<name>');
-    print('Available commands: page, provider, model, widget, repository');
+    printUsage();
     exit(1);
   }
 
+  // Handle help command
+  if (arguments[0] == '--help' ||
+      arguments[0] == '-h' ||
+      arguments[0] == 'help') {
+    printUsage();
+    return;
+  }
+
   if (arguments[0] == 'init') {
-    initProject();
-    generatePage("home");
+    await initProject();
+    generatePage('home');
     return;
   }
 
@@ -21,7 +28,26 @@ void main(List<String> arguments) {
       arguments[2] == 'on') {
     final screenName = arguments[1];
     final pageName = arguments[3];
+    validateName(screenName, 'screen');
+    validateName(pageName, 'page');
     generateScreenOnPage(screenName, pageName);
+    return;
+  }
+
+  // Handle entity command with special format: entity:<name> on <page>
+  if (arguments[0].startsWith('entity:') &&
+      arguments.length >= 3 &&
+      arguments[1] == 'on') {
+    final entityParts = arguments[0].split(':');
+    if (entityParts.length != 2) {
+      print('Invalid entity format. Use: entity:<entity_name> on <page_name>');
+      exit(1);
+    }
+    final entityName = entityParts[1];
+    final pageName = arguments[2];
+    validateName(entityName, 'entity');
+    validateName(pageName, 'page');
+    generateEntities(entityName, pageName);
     return;
   }
 
@@ -39,6 +65,8 @@ void main(List<String> arguments) {
 
     final repoName = repoParts[1];
     final pageName = arguments[2];
+    validateName(repoName, 'repository');
+    validateName(pageName, 'page');
     generateRepositoryOnPage(repoName, pageName);
     return;
   }
@@ -48,11 +76,13 @@ void main(List<String> arguments) {
 
   if (parts.length != 2) {
     print('Invalid command format. Use: <command>:<name>');
+    print('Run "dart generate.dart --help" for usage information.');
     exit(1);
   }
 
   final type = parts[0];
   final name = parts[1];
+  validateName(name, type);
 
   switch (type) {
     case 'page':
@@ -67,6 +97,9 @@ void main(List<String> arguments) {
     case 'widget':
       generateWidget(name);
       break;
+    case 'entity':
+      print('For entity, use: entity:<entity_name> on <page_name>');
+      break;
     case 'repository':
       print('For repository, use: repository:<repo_name> on <page_name>');
       break;
@@ -75,12 +108,76 @@ void main(List<String> arguments) {
       break;
     default:
       print('Unknown command: $type');
-      print('Available commands: page, provider, model, widget');
+      print('Run "dart generate.dart --help" for usage information.');
       exit(1);
   }
 }
 
-String toKebabCase(String input) {
+/// Print usage information
+void printUsage() {
+  print('''
+╔═══════════════════════════════════════════════════════════════╗
+║           Flutter Riverpod Generator CLI                      ║
+╚═══════════════════════════════════════════════════════════════╝
+
+Usage: dart generate.dart <command>
+
+Commands:
+  init                              Initialize project with dependencies
+  page:<name>                       Generate page with provider, model, etc
+  provider:<name>                   Generate standalone provider
+  model:<name>                      Generate Freezed model
+  widget:<name>                     Generate widget
+  screen <name> on <page>           Generate screen on existing page
+  entity:<name> on <page>           Generate entity on existing page
+  repository:<name> on <page>       Generate repository on page
+  crud:<name>                       Generate full CRUD template
+
+Options:
+  --help, -h, help                  Show this help message
+
+Examples:
+  dart generate.dart init
+  dart generate.dart page:home
+  dart generate.dart page:settings.profile
+  dart generate.dart screen login on auth
+  dart generate.dart repository:user on home
+  dart generate.dart entity:product on shop
+  dart generate.dart crud:product
+''');
+}
+
+/// Validate name input
+void validateName(String name, String type) {
+  if (name.isEmpty) {
+    print('❌ Error: $type name cannot be empty.');
+    exit(1);
+  }
+  if (!RegExp(r'^[a-zA-Z][a-zA-Z0-9_.]*$').hasMatch(name)) {
+    print('❌ Error: Invalid $type name "$name".');
+    print(
+      '   Name must start with a letter and contain only letters, numbers, underscores, or dots.',
+    );
+    exit(1);
+  }
+}
+
+/// Safely write content to file with error handling
+void safeWriteFile(File file, String content, {bool logSuccess = false}) {
+  try {
+    file.writeAsStringSync(content);
+    if (logSuccess) {
+      print('✅ Generated: ${file.path}');
+    }
+  } catch (e) {
+    print('❌ Error: Failed to write file ${file.path}');
+    print('   $e');
+    exit(1);
+  }
+}
+
+/// Convert dot notation to camelCase: "settings.profile" -> "settingsProfile"
+String toCamelCaseFromDotNotation(String input) {
   if (input.contains('.')) {
     final parts = input.split('.');
     return parts[0] + parts.skip(1).map((e) => capitalize(e)).join();
@@ -111,14 +208,10 @@ String toSnakeCase(String input) {
   return input;
 }
 
-extension on File {
-  void printCreated() => print('Generated: $path');
-}
-
 void generatePage(String name) {
   final className = toCamelCase(name);
   final fileName = toSnakeCase(name);
-  final notifierName = toKebabCase(name);
+  final notifierName = toCamelCaseFromDotNotation(name);
 
   // Generate page widget with Riverpod
   final pageContent =
@@ -233,13 +326,9 @@ class ${className}Model with _\$${className}Model {
   final providerFile = File('${providersDir.path}/${fileName}_provider.dart');
   final stateFile = File('${modelsDir.path}/${fileName}_model.dart');
 
-  pageFile.writeAsStringSync(pageContent);
-  providerFile.writeAsStringSync(providerContent);
-  stateFile.writeAsStringSync(stateContent);
-
-  print('Generated page: ${pageFile.path}');
-  print('Generated provider: ${providerFile.path}');
-  print('Generated state: ${stateFile.path}');
+  safeWriteFile(pageFile, pageContent, logSuccess: true);
+  safeWriteFile(providerFile, providerContent, logSuccess: true);
+  safeWriteFile(stateFile, stateContent, logSuccess: true);
 
   // Generate additional layers
   generateRepositoryOnPage(name, name);
@@ -287,8 +376,7 @@ class ${className}Notifier extends _\$${className}Notifier {
   }
 
   final file = File('${dir.path}/${fileName}_provider.dart');
-  file.writeAsStringSync(content);
-  print('Generated provider: ${file.path}');
+  safeWriteFile(file, content, logSuccess: true);
 }
 
 void generateModel(String name) {
@@ -303,7 +391,7 @@ part '${fileName}_model.freezed.dart';
 part '${fileName}_model.g.dart';
 
 @freezed
-abstract class ${className}Model with _\$${className}Model {
+class ${className}Model with _\$${className}Model {
   const factory ${className}Model({
     required String id,
     required String name,
@@ -321,8 +409,7 @@ abstract class ${className}Model with _\$${className}Model {
   }
 
   final file = File('${dir.path}/${fileName}_model.dart');
-  file.writeAsStringSync(content);
-  print('Generated model: ${file.path}');
+  safeWriteFile(file, content, logSuccess: true);
 }
 
 void generateScreenOnPage(String screenName, String pageName) {
@@ -387,9 +474,7 @@ class ${screenClassName}Screen extends ConsumerWidget {
 
   // Write screen file
   final screenFile = File('${screenDir.path}/${screenFileName}_screen.dart');
-  screenFile.writeAsStringSync(screenContent);
-
-  print('✅ Generated screen: ${screenFile.path}');
+  safeWriteFile(screenFile, screenContent, logSuccess: true);
   print('📁 Location: lib/features/$pageFileName/presentation/pages/screens/');
   print(
     '🎉 Screen "$screenClassName" successfully created on page "$pageName"',
@@ -423,8 +508,7 @@ class ${className}Widget extends ConsumerWidget {
   }
 
   final file = File('${dir.path}/${fileName}_widget.dart');
-  file.writeAsStringSync(content);
-  print('Generated widget: ${file.path}');
+  safeWriteFile(file, content, logSuccess: true);
 }
 
 void updateAppRouter(String className, String fileName) {
@@ -437,7 +521,7 @@ void updateAppRouter(String className, String fileName) {
   // Update route_paths.dart
   final routePathsFile = File('${navDir.path}/route_paths.dart');
   if (!routePathsFile.existsSync()) {
-    routePathsFile.writeAsStringSync('''
+    safeWriteFile(routePathsFile, '''
 abstract class RoutePaths {
   static const String ${fileName.toUpperCase()} = '/$fileName';
 }
@@ -454,7 +538,7 @@ abstract class RoutePaths {
           lastBraceIndex - 1,
           newRoute,
         );
-        routePathsFile.writeAsStringSync(content);
+        safeWriteFile(routePathsFile, content);
       }
     }
   }
@@ -462,7 +546,7 @@ abstract class RoutePaths {
   // Update app_router.dart
   final appRouterFile = File('${navDir.path}/app_router.dart');
   if (!appRouterFile.existsSync()) {
-    appRouterFile.writeAsStringSync('''
+    safeWriteFile(appRouterFile, '''
 import 'package:go_router/go_router.dart';
 import 'route_paths.dart';
 import '../../features/$fileName/presentation/pages/${fileName}_page.dart';
@@ -512,7 +596,7 @@ final appRouter = GoRouter(
         }
       }
 
-      appRouterFile.writeAsStringSync(content);
+      safeWriteFile(appRouterFile, content);
     }
   }
 
@@ -546,9 +630,11 @@ abstract class ${className}Repository {
   // define your contract here
 }
 ''';
-  File('${domainRepoDir.path}/${fileName}_repository.dart')
-    ..writeAsStringSync(abstractContent)
-    ..printCreated();
+  safeWriteFile(
+    File('${domainRepoDir.path}/${fileName}_repository.dart'),
+    abstractContent,
+    logSuccess: true,
+  );
 
   /* ---- 4. repository impl (sudah import 2 datasource) ---- */
   final implContent =
@@ -566,9 +652,11 @@ class ${className}RepositoryImpl implements ${className}Repository {
   // implement your methods here (network-first, local-fallback)
 }
 ''';
-  File('${dataRepoDir.path}/${fileName}_repository_impl.dart')
-    ..writeAsStringSync(implContent)
-    ..printCreated();
+  safeWriteFile(
+    File('${dataRepoDir.path}/${fileName}_repository_impl.dart'),
+    implContent,
+    logSuccess: true,
+  );
 
   print('✅ Repository "$repoName" created on page "$pageName"');
 }
@@ -596,9 +684,11 @@ class ${className}Entity with _\$${className}Entity {
   final dir = Directory('lib/features/$pageFileName/domain/entities');
   if (!dir.existsSync()) dir.createSync(recursive: true);
 
-  File('${dir.path}/${fileName}_entity.dart')
-    ..writeAsStringSync(content)
-    ..printCreated();
+  safeWriteFile(
+    File('${dir.path}/${fileName}_entity.dart'),
+    content,
+    logSuccess: true,
+  );
 }
 
 /// Entry-point:  dart generate.dart datasource:<name> on <page>
@@ -653,13 +743,17 @@ ${methods.map((m) => '  @override\n  $m').join('\n\n  ')}
   final dir = Directory('lib/features/$pageFileName/data/datasources')
     ..createSync(recursive: true);
 
-  File('${dir.path}/${fileName}_local_datasource.dart')
-    ..writeAsStringSync(localContent)
-    ..printCreated();
+  safeWriteFile(
+    File('${dir.path}/${fileName}_local_datasource.dart'),
+    localContent,
+    logSuccess: true,
+  );
 
-  File('${dir.path}/${fileName}_network_datasource.dart')
-    ..writeAsStringSync(networkContent)
-    ..printCreated();
+  safeWriteFile(
+    File('${dir.path}/${fileName}_network_datasource.dart'),
+    networkContent,
+    logSuccess: true,
+  );
 
   /* ---------- 6.  (Optional) keep repository-impl in sync ---------- */
   _syncRepositoryImpl(name, pageName, methods);
@@ -739,7 +833,7 @@ void _syncRepositoryImpl(
     content = content.replaceFirst(existingMethod, newImpl);
   }
 
-  implFile.writeAsStringSync(content);
+  safeWriteFile(implFile, content, logSuccess: true);
   print('♻️  RepositoryImpl updated (imports + methods).');
 }
 
@@ -760,9 +854,11 @@ abstract class ${className}Repository {
 ''';
   final repoDir = Directory('lib/features/$fileName/domain/repositories')
     ..createSync(recursive: true);
-  File('${repoDir.path}/${fileName}_repository.dart')
-    ..writeAsStringSync(abstractRepo)
-    ..printCreated();
+  safeWriteFile(
+    File('${repoDir.path}/${fileName}_repository.dart'),
+    abstractRepo,
+    logSuccess: true,
+  );
 
   /* ---------- entity (minimal) ---------- */
   final entity =
@@ -781,9 +877,11 @@ class ${className}Entity with _\$${className}Entity {
 ''';
   final entityDir = Directory('lib/features/$fileName/domain/entities')
     ..createSync(recursive: true);
-  File('${entityDir.path}/${fileName}_entity.dart')
-    ..writeAsStringSync(entity)
-    ..printCreated();
+  safeWriteFile(
+    File('${entityDir.path}/${fileName}_entity.dart'),
+    entity,
+    logSuccess: true,
+  );
 
   /* ---------- repository impl ---------- */
   final impl =
@@ -839,9 +937,11 @@ class ${className}RepositoryImpl implements ${className}Repository {
 ''';
   final implDir = Directory('lib/features/$fileName/data/repositories')
     ..createSync(recursive: true);
-  File('${implDir.path}/${fileName}_repository_impl.dart')
-    ..writeAsStringSync(impl)
-    ..printCreated();
+  safeWriteFile(
+    File('${implDir.path}/${fileName}_repository_impl.dart'),
+    impl,
+    logSuccess: true,
+  );
 
   /* ---------- local datasource ---------- */
   final localDs =
@@ -867,9 +967,11 @@ class ${className}LocalDatasource implements ${className}Repository {
 ''';
   final dsDir = Directory('lib/features/$fileName/data/datasources')
     ..createSync(recursive: true);
-  File('${dsDir.path}/${fileName}_local_datasource.dart')
-    ..writeAsStringSync(localDs)
-    ..printCreated();
+  safeWriteFile(
+    File('${dsDir.path}/${fileName}_local_datasource.dart'),
+    localDs,
+    logSuccess: true,
+  );
 
   /* ---------- network datasource ---------- */
   final networkDs =
@@ -893,9 +995,11 @@ class ${className}NetworkDatasource implements ${className}Repository {
   Future<void> delete(String id) async {}
 }
 ''';
-  File('${dsDir.path}/${fileName}_network_datasource.dart')
-    ..writeAsStringSync(networkDs)
-    ..printCreated();
+  safeWriteFile(
+    File('${dsDir.path}/${fileName}_network_datasource.dart'),
+    networkDs,
+    logSuccess: true,
+  );
 
   print('✅ CRUD template for "$name" completed.');
 }
@@ -1034,7 +1138,7 @@ class MyApp extends ConsumerWidget {
 
 ''';
 
-void initProject() async {
+Future<void> initProject() async {
   print('🚀 Initializing Flutter Code Generator...\n');
   print('⚠️  This will overwrite main.dart and tasks.json if they exist.\n');
 
@@ -1050,6 +1154,8 @@ void initProject() async {
 
   final depsToAdd = {
     'flutter_riverpod': '^2.5.1',
+    'hooks_riverpod': '^2.5.1',
+    'flutter_hooks': '^0.20.5',
     'freezed_annotation': '^2.4.4',
     'go_router': '^14.2.3',
     'riverpod_annotation': '^2.3.5',
@@ -1176,7 +1282,7 @@ void initProject() async {
   }
 
   if (modified) {
-    pubspecFile.writeAsStringSync(newLines.join('\n'));
+    safeWriteFile(pubspecFile, newLines.join('\n'));
     print('\n📦 Running flutter pub get...\n');
     final result = await Process.run('flutter', [
       'pub',
@@ -1209,12 +1315,12 @@ void initProject() async {
 
   // Buat .vscode/tasks.json
   final tasksFile = File('.vscode/tasks.json');
-  tasksFile.writeAsStringSync(defaultTasksJson.trim());
+  safeWriteFile(tasksFile, defaultTasksJson.trim(), logSuccess: true);
   print('✅ Created/Updated .vscode/tasks.json');
 
   // Buat main.dart
   final mainFile = File('lib/main.dart');
-  mainFile.writeAsStringSync(defaultMainDart.trim());
+  safeWriteFile(mainFile, defaultMainDart.trim(), logSuccess: true);
   print('✅ Created/Updated lib/main.dart');
 
   print('\n🎉 Initialization complete!');
